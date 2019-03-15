@@ -2,6 +2,10 @@ import
   Utils/zmq: \*
   Utils/tools: \*
   Utils/hmac: \*.
+
+import Utils/JupyterIOPubStream: \*.
+import Library/Data/IO/Pen: 'pPen'.
+
 import Library/Data/Json.
 
 Json on: 'serialize!:' do: {:obj
@@ -12,7 +16,7 @@ Json on: 'serialize!:' do: {:obj
   ^res.
 }.
 
-var DEBUG is False.
+var DEBUG is False not.
 
 var log is {:*stuff
   DEBUG ifFalse: {^Nil.}.
@@ -64,7 +68,7 @@ var KERNEL-INFO is Map new
   put: Map new at: 'help_links'
 .
 
-var send is {:socket:uuid:header:parent-header:metadata:content
+var send is {:key:socket:uuid:header:parent-header:metadata:content
   var signature is getSignature[key, header + parent-header + metadata + content].
   var data is [
     uuid,
@@ -82,7 +86,7 @@ var send is {:socket:uuid:header:parent-header:metadata:content
 }.
 
 var pub is {:header-:state:parent-header
-  const send[socket-iopub, '\x66', header-['status'], parent-header, '{}', '{"execution_state":' + (Json serialize!: state) + '}' ].
+  const send[key, socket-iopub, '\x66', header-['status'], parent-header, '{}', '{"execution_state":' + (Json serialize!: state) + '}' ].
 }.
 
 var pub-busy is {:header-:parent-header const pub[header-, 'busy', parent-header]. }.
@@ -138,7 +142,10 @@ var ignore-request is { log {Ignored some request}. }.
 
 var text/plain is {:x ^Map new put: x toString at: 'text/plain'. }.
 
-var EvalContext is Map new.
+var EvalContext is Map cnew: {
+    JupyterPen => pPen for: JupyterIOPubStream.
+}.
+
 var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:content
   var code is
   '{\n' +
@@ -155,10 +162,16 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
   var empty-object is Map new.
   var counter is exec-counter[].
   var send- is {\:socket:msg-type:content
-      send[socket, uuid, header-[msg-type], parent-header, metadata, (Json serialize!: content)].
+      send[key, socket, uuid, header-[msg-type], parent-header, metadata, (Json serialize!: content)].
   }.
 
   log { Started execution of, $`counter }.
+
+  JupyterIOPubStream
+    header-: header-,
+    parent-header: parent-header.
+
+  log { Set IOPubStream, $`JupyterIOPubStream, headers to, $`header-, and, $`parent-header }.
 
   var res is {
     var cobjs is AST parse: code.
@@ -204,7 +217,7 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
 # send kernel-info
 var reply-kernel-info-request is {:socket:uuid:header-:parent-header:metadata:content
   log { ReplyKernelInfoRequest start }.
-  send[socket-shell, uuid, header-['kernel_info_reply'], parent-header, metadata, (Json serialize!: KERNEL-INFO)].
+  send[key, socket-shell, uuid, header-['kernel_info_reply'], parent-header, metadata, (Json serialize!: KERNEL-INFO)].
   log { ReplyKernelInfoRequest end }.
 }.
 
@@ -258,6 +271,18 @@ var startWorld is {:config-path
     var socket-control   is const createZmq[zmq-context, ZMQ_ROUTER, addport[control-port  ]].
     var socket-iopub     is const createZmq[zmq-context, ZMQ_PUB,    addport[iopub-port    ]].
     var socket-stdin     is const createZmq[zmq-context, ZMQ_ROUTER, addport[stdin-port    ]].
+
+    var pub-text is {:socket:header-:text:stream:parent-header
+      const send[const key, socket, '\x66', header-['stream'], parent-header, '{}', (Json serialize!: (Map new put: text at: 'text', put: stream at: 'name'))].
+    }.
+
+    var pub-text-stdout is {:socket:header-:parent-header:text
+      const pub-text[socket, header-, text, 'stdout', parent-header].
+    }.
+
+    JupyterIOPubStream
+      socket: socket-iopub,
+      sender: pub-text-stdout.
 
     var zmq-session-sockets is Array <
       socket-heartbeat ;

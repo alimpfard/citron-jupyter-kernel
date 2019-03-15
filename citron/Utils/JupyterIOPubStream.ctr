@@ -1,0 +1,11 @@
+var JupyterIOPubStream is Object cnew: {
+  genAccessors: ['header-', 'parent-header', 'socket', 'sender'].
+
+  on: 'type' do: { ^'JupyterIOPubStream'. }.
+  on: 'toString' do: {\ 'JupyterIOPubStream' }.
+
+  on: 'write:' do: {:str
+    # depends: pub-text-stdout
+    my sender[my socket, my header-, my parent-header, str].
+  }.
+}.
