@@ -12,7 +12,11 @@ Json on: 'serialize!:' do: {:obj
   ^res.
 }.
 
+var DEBUG is False.
+
 var log is {:*stuff
+  DEBUG ifFalse: {^Nil.}.
+
   Pen magenta write: '[CitronKernel] [Log] ', resetColor.
   stuff each: {:_:x
     x each: {:_:y
@@ -37,7 +41,7 @@ var createZmq is {\:qq:type:scm :rp:rv:rv2
     rv is frozen _ is CTypes sint set: 1.
     rv2 is frozen _ is CTypes sint set: 4.
     zmq_setsockopt[rp, ZMQ_IMMEDIATE, rv, rv2].
-    Pen writeln: 'create socket $$type for $$scm'.
+    # Pen writeln: 'create socket $$type for $$scm'.
     rp.
 }.
 
@@ -72,7 +76,7 @@ var send is {:socket:uuid:header:parent-header:metadata:content
     content
   ].
 
-  Pen green write: '[CitronKernel] [SEND] [${{socket}}$] ', resetColor writeln: '\n\t%:L' % ['\n\t', data].
+  # Pen green write: '[CitronKernel] [SEND] [${{socket}}$] ', resetColor writeln: '\n\t%:L' % ['\n\t', data].
   zmq_send_all[socket, data, 0].
   # Pen writeln: 'ret $$ret length ${{data length}}$'.
 }.
@@ -85,7 +89,7 @@ var pub-busy is {:header-:parent-header const pub[header-, 'busy', parent-header
 var pub-idle is {:header-:parent-header const pub[header-, 'idle', parent-header]. }.
 
 var heartbeat-handler is {:self:rlen:str
-  Pen green write: '[CitronKernel] ', resetColor writeln: 'heartbeat message recv ' + rlen + ' bytes'.
+  # Pen green write: '[CitronKernel] ', resetColor writeln: 'heartbeat message recv ' + rlen + ' bytes'.
   zmq_send[socket-heartbeat, str, rlen, 0].
 }.
 
@@ -97,7 +101,7 @@ var general-handler is {:self:socket
       [socket, {:self:rlen:first-msg
         var parts is zmq_recv_parts[socket].
         parts unshift: first-msg.
-        Pen green write: '[CitronKernel] ', resetColor writeln: 'parts: \n\t%:L' % ['\n\t', parts].
+        # Pen green write: '[CitronKernel] ', resetColor writeln: 'parts: \n\t%:L' % ['\n\t', parts].
         var uuid is parts head.
         var delimiter is parts @ 1.
         var signature is parts @ 2.
@@ -167,7 +171,7 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
     } inContextAsMain: const EvalContext arguments: [cobjs @ 0 @ 1, const EvalContext].
     ^[\Ok, res].
   } catch: {:e
-    Pen red writeln: [e, e exceptionInfo], resetColor.
+    # Pen red writeln: [e, e exceptionInfo], resetColor.
     ^[\Error, e].
   }, run.
 
@@ -206,7 +210,7 @@ var reply-kernel-info-request is {:socket:uuid:header-:parent-header:metadata:co
 
 var shutdown is {:socket:uuid:header-:parent-header:metadata:content
   zmq-session-sockets fmap: zmq_close.
-  zmq_destroy[zmq-context].
+  zmq_ctx_destroy[zmq-context].
   Program exit.
 }.
 
@@ -217,10 +221,10 @@ var dispatch-route is Map new
   put: ignore-request            at: 'comm_info_request'.
 
 var dispatch is {:msg-type
-  Pen green write: '[CitronKernel] ', resetColor writeln: 'dispatch $$msg-type'.
+  # Pen green write: '[CitronKernel] ', resetColor writeln: 'dispatch $$msg-type'.
   var res is const dispatch-route at: msg-type.
   res isNil ifTrue: {
-    Pen red writeln: '\n*WW* unknown message type: $$msg-type \n\n', resetColor.
+    # Pen red writeln: '\n*WW* unknown message type: $$msg-type \n\n', resetColor.
     ^ignore-request.
   } ifFalse: {
     ^res.
@@ -229,7 +233,7 @@ var dispatch is {:msg-type
 
 var startWorld is {:config-path
     var config is Json parse: (File new: config-path, read).
-    Pen writeln: config.
+    # Pen writeln: config.
     var scm is (config @ 'transport') + '://' + (config @ 'ip') + ':'.
     var addport is \:&port scm + port.
 
@@ -262,10 +266,10 @@ var startWorld is {:config-path
       socket-iopub ;
       socket-stdin .
 
-    Pen writeln: 'Starting general handler'.
+    # Pen writeln: 'Starting general handler'.
     general-handler[socket-shell].
 }.
 
 var cfile is Program argument: 2.
-Pen writeln: 'start with config file $$cfile'.
+# Pen writeln: 'start with config file $$cfile'.
 startWorld[cfile].

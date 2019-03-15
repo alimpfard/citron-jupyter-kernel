@@ -3,7 +3,7 @@ import
 #:language XFrozen
 
 var zmqfns is [
-    'zmq_ctx_new', 'zmq_socket',
+    'zmq_ctx_new', 'zmq_socket', 'zmq_close', 'zmq_ctx_destroy',
     'zmq_bind',
     'zmq_recv', 'zmq_send',
     'zmq_getsockopt', 'zmq_setsockopt',
@@ -101,6 +101,6 @@ var zmq_send_all is {:self:socket:data:flags
   data each: {:idx:data
     var nflags is (datalength - 1 = idx either: flags or: (flags bitOr: ZMQ_SNDMORE)).
     var res is zmq_send[socket, data, data bytes, nflags].
-    Pen cyan write: '[CitronZMQ] ', resetColor writeln: 'sent %d bytes (%d bytes expected)' % [res, data bytes].
+    # Pen cyan write: '[CitronZMQ] ', resetColor writeln: 'sent %d bytes (%d bytes expected)' % [res, data bytes].
   }.
 }.
