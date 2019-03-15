@@ -1,0 +1,7 @@
+var getSignature is {:key:str
+  key = '' ifTrue: { ^key. }.
+  var cmd is 'echo \'%s\' | openssl dgst -sha256 -hmac %s' % [(str escapeAsciiControls escape: '\''), (key escapeAsciiControls escape: '\'')].
+  Pen writeln: 'DIGEST: $$cmd'.
+  var hmac is Shell call: cmd, trim skip: 9.
+  ^hmac.
+}.

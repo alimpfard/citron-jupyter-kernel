@@ -1,0 +1,17 @@
+import Library/Data/Json: \*.
+
+var makeId is {\
+  Dice rollWithSides: 126, + 2 toStringInBase: 16.
+}.
+
+var makeHeader is {\:user:session:version
+  {\:msg-type
+    Json serialize: ( Map new
+      put: makeId[] at: 'msg_id',
+      put: user at: 'username',
+      put: session at: 'session',
+      put: msg-type at: 'msg_type',
+      put: version at: 'version'
+    ).
+  }.
+}.
