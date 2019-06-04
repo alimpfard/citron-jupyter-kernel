@@ -1,3 +1,5 @@
+Broom memoryLimit: 1024 * 1024 * 1024 * 8.
+
 import
   Utils/zmq: \*
   Utils/tools: \*
@@ -18,20 +20,15 @@ Json on: 'serialize!:' do: {:obj
 
 var DEBUG is False not.
 
-var log is {:*stuff
+var log is {:stuff
   DEBUG ifFalse: {^Nil.}.
 
-  Pen magenta write: '[CitronKernel] [Log] ', resetColor.
-  stuff each: {:_:x
-    x each: {:_:y
-      ['REFERENCE', 'UNAMESSAGE', 'BINMESSAGE', 'LTRSTRING'] contains: y type, ifTrue: {
-        Pen write: y value, write: ' '.
-      } ifFalse: {
-        Pen write: y, write: ' '.
-      }.
-    }.
-  }.
+  Pen magenta write: '[CitronKernel] [Log] [${{Shell call: 'date +%T.%3N', trim}}$] ', resetColor.
+  Pen write: stuff.
   Pen brk.
+}.
+log on: 'process:' do: {:str
+  ^me[str].
 }.
 
 #:language XFrozen
@@ -60,29 +57,31 @@ var KERNEL-INFO is Map new
       put: 'Citron' at: 'name',
       put: Reflect version at: 'version',
       put: 'application/x-citron' at: 'mimetype',
-      put: '.ctr' at: 'file_extension',
-      put: 'Citron' at: 'pygments_lexer',
-      put: 'citron' at: 'codemirror_mode'
+      put: '.ctr' at: 'file_extension'
   ) at: 'language_info',
   put: 'Citron ${{Reflect compilerInfo}}$ Jupyter Kernel' at: 'banner',
-  put: Map new at: 'help_links'
+  put: [] at: 'help_links'
 .
 
 var send is {:key:socket:uuid:header:parent-header:metadata:content
-  var signature is getSignature[key, header + parent-header + metadata + content].
-  var data is [
-    uuid,
-    const DELIM,
-    signature,
-    header,
-    parent-header,
-    metadata,
-    content
-  ].
-
-  # Pen green write: '[CitronKernel] [SEND] [${{socket}}$] ', resetColor writeln: '\n\t%:L' % ['\n\t', data].
-  zmq_send_all[socket, data, 0].
-  # Pen writeln: 'ret $$ret length ${{data length}}$'.
+  var data is Nil.
+  var timeF is Clock executionSeconds: {
+    var signature is getSignature[key, header + parent-header + metadata + content].
+    data is [
+      uuid,
+      const DELIM,
+      signature,
+      header,
+      parent-header,
+      metadata,
+      content
+    ].
+  }.
+  log ['creating data took ${{timeF * 1000}}$ ms'].
+  timeF is Clock executionSeconds: {
+    zmq_send_all[socket, data, 0].
+  }.
+  log ['sending data took ${{timeF * 1000}}$ ms'].
 }.
 
 var pub is {:header-:state:parent-header
@@ -97,48 +96,45 @@ var heartbeat-handler is {:self:rlen:str
   zmq_send[socket-heartbeat, str, rlen, 0].
 }.
 
-var general-handler is {:self:socket
-  log{General Handler begin}.
+var general-handler is {:self:*sockets
+  var socks-and-procs is sockets fmap: {:sock ^[sock, {:socket:parts
+      log ['socket $$socket receied data'].
+      var uuid is parts head.
+      var delimiter is parts @ 1.
+      var signature is parts @ 2.
+      var header is Json parse: parts @ 3.
+      var parent-header is Json parse: parts @ 4.
+      var metadata is Json parse: parts @ 5.
+      var content is Json parse: parts @ 6.
+
+      var msg-type is header @ 'msg_type'.
+      var msg-username is header @ 'username'.
+      var msg-session is header @ 'session'.
+      var msg-version is header @ 'version'.
+
+      log 'Parsed parts'.
+      log ['message type $$msg-type with header $$header and content $$content'].
+
+      var header- is makeHeader[msg-username, msg-session, msg-version].
+      log 'Dispatch begin'.
+      pub-busy[header-, parts @ 3].
+
+      dispatch[msg-type][socket, uuid, header-, parts @ 3, parts @ 5, content].
+
+      pub-idle[header-, parts @ 3].
+      log 'Dispatch end'.
+    }].
+  }.
   {
-    zmq_race_recv[
-      [socket-heartbeat, heartbeat-handler],
-      [socket, {:self:rlen:first-msg
-        var parts is zmq_recv_parts[socket].
-        parts unshift: first-msg.
-        # Pen green write: '[CitronKernel] ', resetColor writeln: 'parts: \n\t%:L' % ['\n\t', parts].
-        var uuid is parts head.
-        var delimiter is parts @ 1.
-        var signature is parts @ 2.
-        var header is Json parse: parts @ 3.
-        var parent-header is Json parse: parts @ 4.
-        var metadata is Json parse: parts @ 5.
-        var content is Json parse: parts @ 6.
+    log 'General Handler begin'.
+    zmq_race_recv_parts applyAll: socks-and-procs.
 
-        var msg-type is header @ 'msg_type'.
-        var msg-username is header @ 'username'.
-        var msg-session is header @ 'session'.
-        var msg-version is header @ 'version'.
-
-        log{Parsed parts}.
-
-        var header- is makeHeader[msg-username, msg-session, msg-version].
-        log {Dispatch begin}.
-        pub-busy[header-, parts @ 3].
-
-        dispatch[msg-type][socket, uuid, header-, parts @ 3, parts @ 5, content].
-
-        pub-idle[header-, parts @ 3].
-        log {Dispatch end}.
-      }]
-    ].
-    log {General Handler sleep start}.
+    log 'General Handler sleep start'.
     Clock wait: 10 msec.
-    log {General Handler sleep end}.
-    log{General Handler reinstate}.
+    log 'General Handler sleep end'.
   } forever.
 }.
 
-var ignore-request is { log {Ignored some request}. }.
 
 var text/plain is {:x ^Map new put: x toString at: 'text/plain'. }.
 
@@ -151,7 +147,7 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
   '{\n' +
     (content @ 'code') +
   '\n}.'.
-  log { Generated code }.
+  log 'Generated code'.
 
   var silent            is content @ 'silent'.
   var store-history     is content @ 'store_history'.
@@ -165,67 +161,80 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
       send[key, socket, uuid, header-[msg-type], parent-header, metadata, (Json serialize!: content)].
   }.
 
-  log { Started execution of, $`counter }.
+  log ['Started execution of $$counter'].
 
   JupyterIOPubStream
     header-: header-,
     parent-header: parent-header.
 
-  log { Set IOPubStream, $`JupyterIOPubStream, headers to, $`header-, and, $`parent-header }.
+  log ['Set IOPubStream $$JupyterIOPubStream headers to $$header- and $$parent-header'].
+  # Thread new: {
+    log ['Started execution thread for expr $$counter'].
+    var res is {
+      var cobjs is AST parse: code.
+      var res is Reflect run: {:cobjs:EvalContext
+        var res is Nil.
+        cobjs each: {:_:cobj
+          res is cobj evaluateInContext: EvalContext.
+        }.
+        ^res.
+      } inContextAsMain: const EvalContext arguments: [cobjs @ 0 @ 1, const EvalContext].
+      ^[\Ok, res].
+    } catch: {:e
+      # Pen red writeln: [e, e exceptionInfo], resetColor.
+      ^[\Error, e].
+    }, run.
 
-  var res is {
-    var cobjs is AST parse: code.
-    var res is Reflect run: {:cobjs:EvalContext
-      var res is Nil.
-      cobjs each: {:_:cobj
-        res is cobj evaluateInContext: EvalContext.
-      }.
-      ^res.
-    } inContextAsMain: const EvalContext arguments: [cobjs @ 0 @ 1, const EvalContext].
-    ^[\Ok, res].
-  } catch: {:e
-    # Pen red writeln: [e, e exceptionInfo], resetColor.
-    ^[\Error, e].
-  }, run.
+    log ['Executed code $$code'].
 
-  log {Executed code, $`code}.
+    log ['Sending info back for context $$counter'].
+    send-[socket-iopub, 'execute_input', (Map new put: (content @ 'code') at: 'code', put: counter at: 'execution_count')].
 
-  send-[socket-iopub, 'execute_input', (Map new put: (content @ 'code') at: 'code', put: counter at: 'execution_count')].
-  res head = \Error ifTrue: {
-    send-[socket-iopub, 'error', (Map new
-      put: 'Exception' at: 'ename',
-      put: res last at: 'evalue',
-      put: [] at: 'traceback')].
-    send-[socket, 'execute_reply', (Map new
-      put: 'error' at: 'status',
-      put: counter at: 'execution_count',
-      put: 'Exception' at: 'ename',
-      put: res last at: 'evalue',
-      put: [] at: 'traceback',
-      put: [] at: 'payload')].
-  } ifFalse: {
-    send-[socket, 'execute_reply', (Map new
-      put: 'ok' at: 'status',
-      put: counter at: 'execution_count',
-      put: [] at: 'payload')].
-    send-[socket-iopub, 'execute_result', (Map new
-      put: text/plain[res last] at: 'data',
-      put: counter at: 'execution_count',
-      put: empty-object at: 'metadata')].
-  }.
+    log 'sent the code info back'.
+
+    res head = \Error ifTrue: {
+      send-[socket-iopub, 'error', (Map new
+        put: 'Exception' at: 'ename',
+        put: res last at: 'evalue',
+        put: [] at: 'traceback')].
+      send-[socket, 'execute_reply', (Map new
+        put: 'error' at: 'status',
+        put: counter at: 'execution_count',
+        put: 'Exception' at: 'ename',
+        put: res last at: 'evalue',
+        put: [] at: 'traceback',
+        put: [] at: 'payload')].
+    } ifFalse: {
+      send-[socket, 'execute_reply', (Map new
+        put: 'ok' at: 'status',
+        put: counter at: 'execution_count',
+        put: [] at: 'payload')].
+      send-[socket-iopub, 'execute_result', (Map new
+        put: text/plain[res last] at: 'data',
+        put: counter at: 'execution_count',
+        put: empty-object at: 'metadata')].
+    }.
+
+    log ['Responded to the execute request $$res'].
+    log ['Killing off thread for context $$counter'].
+  # }, detach run.
 }.
 # send kernel-info
 var reply-kernel-info-request is {:socket:uuid:header-:parent-header:metadata:content
-  log { ReplyKernelInfoRequest start }.
+  log 'ReplyKernelInfoRequest start'.
   send[key, socket-shell, uuid, header-['kernel_info_reply'], parent-header, metadata, (Json serialize!: KERNEL-INFO)].
-  log { ReplyKernelInfoRequest end }.
+  log 'ReplyKernelInfoRequest end'.
 }.
 
 var shutdown is {:socket:uuid:header-:parent-header:metadata:content
+  log 'Closing all sockets...'.
   zmq-session-sockets fmap: zmq_close.
   zmq_ctx_destroy[zmq-context].
+  log 'Now dying as per request'.
   Program exit.
 }.
+
+var ignore-request is { log 'Ignored some request'. }.
 
 var dispatch-route is Map new
   put: reply-kernel-info-request at: 'kernel_info_request',
@@ -245,6 +254,7 @@ var dispatch is {:msg-type
 }.
 
 var startWorld is {:config-path
+    log 'Starting world'.
     var config is Json parse: (File new: config-path, read).
     # Pen writeln: config.
     var scm is (config @ 'transport') + '://' + (config @ 'ip') + ':'.
@@ -266,7 +276,6 @@ var startWorld is {:config-path
     # zmq context
     var zmq-context is zmq_ctx_new[].
 
-    var socket-heartbeat is const createZmq[zmq-context, ZMQ_REP,    addport[heartbeat-port]].
     var socket-shell     is const createZmq[zmq-context, ZMQ_ROUTER, addport[shell-port    ]].
     var socket-control   is const createZmq[zmq-context, ZMQ_ROUTER, addport[control-port  ]].
     var socket-iopub     is const createZmq[zmq-context, ZMQ_PUB,    addport[iopub-port    ]].
@@ -285,16 +294,28 @@ var startWorld is {:config-path
       sender: pub-text-stdout.
 
     var zmq-session-sockets is Array <
-      socket-heartbeat ;
       socket-shell ;
       socket-control ;
       socket-iopub ;
       socket-stdin .
 
+    Thread new: {
+      var zmq-context is zmq_ctx_new[].
+      var socket-heartbeat is const createZmq[zmq-context, ZMQ_REP,    addport[heartbeat-port]].
+      log 'Heartbeat thread start'.
+      {
+        var msg is zmq_recv_str[socket-heartbeat].
+        log ['Heartbeat message received $$msg'].
+        zmq_send[socket-heartbeat, msg, msg bytes, 0].
+        log 'Heartbeat message echoed back'.
+      } forever.
+    }, run.
     # Pen writeln: 'Starting general handler'.
-    general-handler[socket-shell].
+    general-handler[socket-shell, socket-control].
 }.
 
 var cfile is Program argument: 2.
 # Pen writeln: 'start with config file $$cfile'.
 startWorld[cfile].
+
+log 'WERE GONNA DIEEEEEEEEEEEE!!!'.

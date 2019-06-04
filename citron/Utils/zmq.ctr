@@ -96,6 +96,26 @@ var zmq_race_recv is {:*socks_and_procs
   }.
 }.
 
+var zmq_race_recv_parts is {:*socks_and_procs
+  var sock is Nil.
+  var proc is Nil.
+  var buf is frozen buf is CTypes allocateBytes: 2048.
+  {^sock isNil.} whileTrue: {
+    socks_and_procs each_v: {:sock_and_proc
+      sock is sock_and_proc @ 0.
+      proc is sock_and_proc @ 1.
+      var rlen is zmq_recv[sock, buf, 2048, ZMQ_DONTWAIT].
+      rlen = -1 ifFalse: {
+        var parts is [buf readBytesAsString: rlen] + zmq_recv_parts[sock].
+        proc[sock, parts].
+        True break.
+      }.
+      sock is Nil.
+    }.
+    Clock wait: 40 msec.
+  }.
+}.
+
 var zmq_send_all is {:self:socket:data:flags
   var datalength is data count.
   data each: {:idx:data
