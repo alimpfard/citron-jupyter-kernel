@@ -1,7 +1,8 @@
 var getSignature is {:key:str
   key = '' ifTrue: { ^key. }.
-  var cmd is 'echo \'%s\' | openssl dgst -sha256 -hmac %s' % [(str escapeAsciiControls escape: '\''), (key escapeAsciiControls escape: '\'')].
-  Pen writeln: 'DIGEST: $$cmd'.
-  var hmac is Shell call: cmd, trim skip: 9.
-  ^hmac.
+  var ff is '/tmp/ictronff-${{Program pid}}$'.
+  var cmd is 'openssl dgst -sha256 -hmac \'%s\' < %s' % [(key escapeAsciiControls escape: '\''), ff].
+  log ['DIGEST: $$cmd'].
+  File new: ff, write: str.
+  ^Shell call: cmd, trim skip: 9.
 }.

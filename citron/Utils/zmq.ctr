@@ -1,5 +1,6 @@
 import
-  Library/Foreign/Interop/C.
+  Library/Foreign/Interop/C
+  Library/Foreign/C/C_Types: ['c_ptr', 'c_long', 'c_sint'].
 #:language XFrozen
 
 var zmqfns is [
@@ -7,7 +8,8 @@ var zmqfns is [
     'zmq_bind',
     'zmq_recv', 'zmq_send',
     'zmq_getsockopt', 'zmq_setsockopt',
-    'zmq_strerror'
+    'zmq_strerror',
+    'zmq_proxy'
 ].
 
 var zmqconsts is [
@@ -33,15 +35,31 @@ var zmqconsts is [
 Inject importDefines: zmqconsts fromHeaders: ['zmq.h'].
 Inject importFunctionsOrTypes: zmqfns fromHeaders: ['zmq.h'] andLibraries: ['zmq'].
 
-var zmq_strerror_s_ is Inject new linkInLibrary: 'zmq', compile: '
+var nat-ctx is Inject new linkInLibrary: 'zmq', compile: '
 #include <zmq.h>
 char* get() {
   char* r = (char*)zmq_strerror(errno);
   return r;
 }
-', symbol: 'get'.
+
+int pollout(void *socket, long timeout) {
+  zmq_pollitem_t items [1];
+  items[0].socket = socket;
+  items[0].events = ZMQ_POLLOUT;
+  int rc = zmq_poll (items, 1, timeout);
+  if (rc != 1)
+    return rc;
+  return items[0].revents | ZMQ_POLLOUT;
+}
+'.
+var zmq_strerror_s_ is nat-ctx symbol: 'get'.
 var zmq_strerror_s_c is CIF new setABI: 0 return: CTypes pointer argTypes: [].
 var zmq_strerror_s is \:_ zmq_strerror_s_c call: zmq_strerror_s_ withArgs: [].
+
+var zmq_pollout_s_ is nat-ctx symbol: 'pollout'.
+var zmq_pollout_s_c is CIF new setABI: 0 return: c_sint argTypes: [c_ptr, c_long].
+var zmq_pollout_s is \:sock:timeout zmq_pollout_s_c call: zmq_pollout_s_ withArgs: [sock, timeout].
+
 
 var ZMQ_BUF_SIZE is 4096 * 2.
 var zmq_buffer_new is {:size
@@ -73,7 +91,7 @@ var zmq_recv_parts is {:self:socket:parts
     self[socket, parts].
   }.
   # }.
-  # Pen writeln: 'Received ${{parts count}}$ parts in total'.
+  # Pen writeln: 'Received ${{parts count}}$ parts in total : $$parts'.
   ^parts.
 }.
 
@@ -106,7 +124,10 @@ var zmq_race_recv_parts is {:*socks_and_procs
       proc is sock_and_proc @ 1.
       var rlen is zmq_recv[sock, buf, 2048, ZMQ_DONTWAIT].
       rlen = -1 ifFalse: {
-        var parts is [buf readBytesAsString: rlen] + zmq_recv_parts[sock].
+        var parts is [buf readBytesAsString: rlen].
+        # Pen writeln: 'Received the initial (uuid?) packet (of size ${{rlen}}$): ${{parts head toByteArray}}$'.
+        parts is parts + zmq_recv_parts[sock].
+        Pen writeln: 'received parts: ${{parts head toByteArray}}$, ${{parts tail join: ', '}}$'.
         proc[sock, parts].
         True break.
       }.
@@ -116,8 +137,22 @@ var zmq_race_recv_parts is {:*socks_and_procs
   }.
 }.
 
+var zmq_wait_until_ready is {:socket:extra_stuff_to_do
+  {
+    var res is const zmq_pollout_s[socket, 1].
+    res < 0 ifTrue: {
+      thisBlock error: const zmq_strerror_s[].
+    }.
+    ^res > 0.
+  } whileFalse: {
+    Pen writeln: 'nothing can be sent on socket $$socket yet'.
+    extra_stuff_to_do[].
+  }.
+}.
+
 var zmq_send_all is {:self:socket:data:flags
   var datalength is data count.
+  Pen writeln: 'sending parts: ${{data head toByteArray}}$, ${{data tail join: ', '}}$'.
   data each: {:idx:data
     var nflags is (datalength - 1 = idx either: flags or: (flags bitOr: ZMQ_SNDMORE)).
     var res is zmq_send[socket, data, data bytes, nflags].

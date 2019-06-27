@@ -1,3 +1,5 @@
+#:language XFrozen
+
 Broom memoryLimit: 1024 * 1024 * 1024 * 8.
 
 import
@@ -9,6 +11,8 @@ import Utils/JupyterIOPubStream: \*.
 import Library/Data/IO/Pen: 'pPen'.
 
 import Library/Data/Json.
+import
+    Library/Foreign/C/C_Types: { c_null => 'c_ptr_null'. }.
 
 Json on: 'serialize!:' do: {:obj
   var res is serialize: obj, escape: '\n\a\b\f\r\t\v'.
@@ -18,7 +22,7 @@ Json on: 'serialize!:' do: {:obj
   ^res.
 }.
 
-var DEBUG is False not.
+var DEBUG is True.
 
 var log is {:stuff
   DEBUG ifFalse: {^Nil.}.
@@ -67,8 +71,7 @@ var send is {:key:socket:uuid:header:parent-header:metadata:content
   var data is Nil.
   var timeF is Clock executionSeconds: {
     var signature is getSignature[key, header + parent-header + metadata + content].
-    data is [
-      uuid,
+    data is uuid + [
       const DELIM,
       signature,
       header,
@@ -85,9 +88,10 @@ var send is {:key:socket:uuid:header:parent-header:metadata:content
 }.
 
 var pub is {:header-:state:parent-header
-  const send[key, socket-iopub, '\x66', header-['status'], parent-header, '{}', '{"execution_state":' + (Json serialize!: state) + '}' ].
+  const send[key, socket-iopub, ['\x66'], header-['status'], parent-header, '{}', '{"execution_state":' + (Json serialize!: state) + '}' ].
 }.
 
+var pub-starting is {:header-:parent-header const pub[header-, 'starting', parent-header]. }.
 var pub-busy is {:header-:parent-header const pub[header-, 'busy', parent-header]. }.
 var pub-idle is {:header-:parent-header const pub[header-, 'idle', parent-header]. }.
 
@@ -99,13 +103,16 @@ var heartbeat-handler is {:self:rlen:str
 var general-handler is {:self:*sockets
   var socks-and-procs is sockets fmap: {:sock ^[sock, {:socket:parts
       log ['socket $$socket receied data'].
-      var uuid is parts head.
-      var delimiter is parts @ 1.
-      var signature is parts @ 2.
-      var header is Json parse: parts @ 3.
-      var parent-header is Json parse: parts @ 4.
-      var metadata is Json parse: parts @ 5.
-      var content is Json parse: parts @ 6.
+      var didx is parts indexOf: const DELIM.
+      log ['Delimiter at $$didx'].
+      var uuid is parts from: 0 length: didx.
+      log ['our uuid is $$uuid - ${{uuid fmap: \:x x toByteArray}}$'].
+      # var delimiter is parts @ didx.
+      var signature is parts @ (didx + 1).
+      var header is Json parse: parts @ (didx + 2).
+      var parent-header is Json parse: parts @ (didx + 3).
+      var metadata is Json parse: parts @ (didx + 4).
+      var content is Json parse: parts @ (didx + 5).
 
       var msg-type is header @ 'msg_type'.
       var msg-username is header @ 'username'.
@@ -116,13 +123,23 @@ var general-handler is {:self:*sockets
       log ['message type $$msg-type with header $$header and content $$content'].
 
       var header- is makeHeader[msg-username, msg-session, msg-version].
+      var first is False.
+      frozen _ is {
+        first is True.
+        pub-starting[header-, parts @ (didx + 3)].
+        ^Nil.
+      } run.
+
       log 'Dispatch begin'.
-      pub-busy[header-, parts @ 3].
-
-      dispatch[msg-type][socket, uuid, header-, parts @ 3, parts @ 5, content].
-
-      pub-idle[header-, parts @ 3].
+      # we busy
+      first ifFalse: {
+        pub-busy[header-, parts @ (didx + 3)].
+      }.
+      
+      dispatch[msg-type][socket, uuid, header-, parts @ (didx + 2), parts @ (didx + 3), content].
       log 'Dispatch end'.
+      # we're done, I don't wanna hear you anymore :huff:
+      pub-idle[header-, parts @ (didx + 3)].
     }].
   }.
   {
@@ -216,9 +233,12 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
     }.
 
     log ['Responded to the execute request $$res'].
+
+
     log ['Killing off thread for context $$counter'].
   # }, detach run.
 }.
+
 # send kernel-info
 var reply-kernel-info-request is {:socket:uuid:header-:parent-header:metadata:content
   log 'ReplyKernelInfoRequest start'.
@@ -227,6 +247,8 @@ var reply-kernel-info-request is {:socket:uuid:header-:parent-header:metadata:co
 }.
 
 var shutdown is {:socket:uuid:header-:parent-header:metadata:content
+  log 'Telling the dumb client we\'re gonna die'.
+  send[key, socket, uuid, header-['shutdown_reply'], parent-header, metadata, (Json serialize!: content)]. # just echo the thing back :p
   log 'Closing all sockets...'.
   zmq-session-sockets fmap: zmq_close.
   zmq_ctx_destroy[zmq-context].
@@ -234,19 +256,40 @@ var shutdown is {:socket:uuid:header-:parent-header:metadata:content
   Program exit.
 }.
 
-var ignore-request is { log 'Ignored some request'. }.
+var ignore-request is {:socket:uuid:header-:parent-header:metadata:content
+  log ['Ignored some request on $$socket : $$metadata -- $$content'].
+}.
+
+var handle-iscomplete is {:socket:uuid:header-:parent-header:metadata:content
+  log 'IsComplete? request initiated'.
+  {
+    var code is (content @ 'code') trim.
+    code endsWith: '.', ifFalse: {
+      code +=: '.'.
+    }.
+    log ['checking code $$code'].
+    var ast is AST parse: code.
+    log ['resulted in ast $$ast'].
+    log 'IsComplete? request: is complete'.
+    send[key, socket, uuid, header-['is_complete_reply'], parent-header, metadata, (Json serialize!: (Map new put: 'complete' at: 'status'))].
+  } catch: {:e
+    log ['IsComplete? request: is invalid: $$e'].
+    send[key, socket, uuid, header-['is_complete_reply'], parent-header, metadata, (Json serialize!: (Map new put: 'invalid' at: 'status'))].
+  }, run.
+}.
 
 var dispatch-route is Map new
   put: reply-kernel-info-request at: 'kernel_info_request',
   put: reply-execute-request     at: 'execute_request',
   put: shutdown                  at: 'shutdown_request',
-  put: ignore-request            at: 'comm_info_request'.
+  put: ignore-request            at: 'comm_info_request',
+  put: handle-iscomplete         at: 'is_complete_request'.
 
 var dispatch is {:msg-type
   # Pen green write: '[CitronKernel] ', resetColor writeln: 'dispatch $$msg-type'.
   var res is const dispatch-route at: msg-type.
   res isNil ifTrue: {
-    # Pen red writeln: '\n*WW* unknown message type: $$msg-type \n\n', resetColor.
+    Pen red writeln: '\n*WW* unknown message type: $$msg-type \n\n', resetColor.
     ^ignore-request.
   } ifFalse: {
     ^res.
@@ -303,19 +346,27 @@ var startWorld is {:config-path
       var zmq-context is zmq_ctx_new[].
       var socket-heartbeat is const createZmq[zmq-context, ZMQ_REP,    addport[heartbeat-port]].
       log 'Heartbeat thread start'.
-      {
-        var msg is zmq_recv_str[socket-heartbeat].
-        log ['Heartbeat message received $$msg'].
-        zmq_send[socket-heartbeat, msg, msg bytes, 0].
-        log 'Heartbeat message echoed back'.
-      } forever.
+      zmq_proxy[socket-heartbeat, socket-heartbeat, c_null].
     }, run.
     # Pen writeln: 'Starting general handler'.
     general-handler[socket-shell, socket-control].
 }.
 
-var cfile is Program argument: 2.
-# Pen writeln: 'start with config file $$cfile'.
+var args is Generator from: 0 to: Program argCount - 1, fmap: \:x Program argument: x.
+
+args next.
+args next.
+var cfile is Nil.
+
+args each: {:_:arg
+    Pen writeln: arg.
+    arg = '-quiet' ifTrue: {
+        DEBUG is False.
+    } ifFalse: {
+        cfile is arg.
+    }.
+}.
+
 startWorld[cfile].
 
-log 'WERE GONNA DIEEEEEEEEEEEE!!!'.
+log 'WE\'RE GONNA DIEEEEEEEEEEEE!!!'.
