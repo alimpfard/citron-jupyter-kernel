@@ -30,6 +30,8 @@ Requires:
 
 How-to:
 + run `install_script.sh`
++ `jupyter notebook` 
++ select "Citron Kernel"
 
 Here's a screenshot
 ![Screenshot: Hello](images/screenshot-hello.png)
