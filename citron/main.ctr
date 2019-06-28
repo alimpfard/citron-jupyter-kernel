@@ -61,7 +61,9 @@ var KERNEL-INFO is Map new
       put: 'Citron' at: 'name',
       put: Reflect version at: 'version',
       put: 'application/x-citron' at: 'mimetype',
-      put: '.ctr' at: 'file_extension'
+      put: '.rb' at: 'file_extension',
+      put: 'ruby' at: 'codemirror_mode',
+      put: 'ruby' at: 'pygments_lexer'
   ) at: 'language_info',
   put: 'Citron ${{Reflect compilerInfo}}$ Jupyter Kernel' at: 'banner',
   put: [] at: 'help_links'
