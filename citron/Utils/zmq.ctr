@@ -127,7 +127,7 @@ var zmq_race_recv_parts is {:*socks_and_procs
         var parts is [buf readBytesAsString: rlen].
         # Pen writeln: 'Received the initial (uuid?) packet (of size ${{rlen}}$): ${{parts head toByteArray}}$'.
         parts is parts + zmq_recv_parts[sock].
-        Pen writeln: 'received parts: ${{parts head toByteArray}}$, ${{parts tail join: ', '}}$'.
+        # Pen writeln: 'received parts: ${{parts head toByteArray}}$, ${{parts tail join: ', '}}$'.
         proc[sock, parts].
         True break.
       }.
@@ -145,14 +145,14 @@ var zmq_wait_until_ready is {:socket:extra_stuff_to_do
     }.
     ^res > 0.
   } whileFalse: {
-    Pen writeln: 'nothing can be sent on socket $$socket yet'.
+    # Pen writeln: 'nothing can be sent on socket $$socket yet'.
     extra_stuff_to_do[].
   }.
 }.
 
 var zmq_send_all is {:self:socket:data:flags
   var datalength is data count.
-  Pen writeln: 'sending parts: ${{data head toByteArray}}$, ${{data tail join: ', '}}$'.
+  # Pen writeln: 'sending parts: ${{data head toByteArray}}$, ${{data tail join: ', '}}$'.
   data each: {:idx:data
     var nflags is (datalength - 1 = idx either: flags or: (flags bitOr: ZMQ_SNDMORE)).
     var res is zmq_send[socket, data, data bytes, nflags].
