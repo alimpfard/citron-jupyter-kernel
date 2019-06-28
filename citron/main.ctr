@@ -135,7 +135,7 @@ var general-handler is {:self:*sockets
       first ifFalse: {
         pub-busy[header-, parts @ (didx + 3)].
       }.
-      
+
       dispatch[msg-type][socket, uuid, header-, parts @ (didx + 2), parts @ (didx + 3), content].
       log 'Dispatch end'.
       # we're done, I don't wanna hear you anymore :huff:
@@ -325,7 +325,7 @@ var startWorld is {:config-path
     var socket-stdin     is const createZmq[zmq-context, ZMQ_ROUTER, addport[stdin-port    ]].
 
     var pub-text is {:socket:header-:text:stream:parent-header
-      const send[const key, socket, '\x66', header-['stream'], parent-header, '{}', (Json serialize!: (Map new put: text at: 'text', put: stream at: 'name'))].
+      const send[const key, socket, ['\x66'], header-['stream'], parent-header, '{}', (Json serialize!: (Map new put: text at: 'text', put: stream at: 'name'))].
     }.
 
     var pub-text-stdout is {:socket:header-:parent-header:text
