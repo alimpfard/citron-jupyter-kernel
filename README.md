@@ -29,12 +29,7 @@ Requires:
 + `Openssl` (if you're using windows, go away)
 
 How-to:
-
-write a kernel.json file according to [this](https://jupyter-client.readthedocs.io/en/stable/kernels.html#kernel-specs), or copy the ready one (hopefully once I add it)
-to `~/.local/share/jupyter/kernels/citron`
-
-
-**This also works with Jupyter Lab** (Why would it not?)
++ run `install_script.sh`
 
 Here's a screenshot
 ![Screenshot: Hello](images/screenshot-hello.png)
