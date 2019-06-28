@@ -7,14 +7,13 @@ The execution of code is done through a kernel that uses its messaging protocol.
 ## The current state of this thing
 
 Things that don't work, period:
-+ Signing is broken (set session key to `b''` to get around this
 + Code Completion is not implemented
 + Syntax highlighting is nonexistent
-+ IO streams are not redirected
 + The kernel will sit and look at you for a few restarts (:shrug:)
 
 
 Things that sometimes break:
++ IO stream redirects are not redirected, but `JupyterPen` can write to the stdout of the cell
 + Execution of too many code blocks at once prompts Jupyter to restart the kernel (for no apparent reason?)
 + no Heartbeat messages are sent, so none are handled
 
