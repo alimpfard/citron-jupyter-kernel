@@ -1,0 +1,207 @@
+#:language XFrozen
+
+import Library/Data/SwitchCase.
+
+var EncodedDisplayObject is Map new.
+EncodedDisplayObject on: 'type' do: {\ 'EncodedDisplayObject' }.
+EncodedDisplayObject on: 'toString' do: { ^'EncodedDisplayObject {%s}' % [me `toString]. }.
+var encode is {:&object:mime
+  ^ const EncodedDisplayObject new
+      put: '[Object]' at: 'text/plain',
+      put: object at: mime.
+}.
+
+var Registery is Object cnew: {
+  renderers => Map new.
+  on: 'toString' do: {
+    ^'MimeRegistery {%L}' % [my renderers keys].
+  }.
+  on: 'findAppropriateRenderer:' do: {:self:&object
+    object isA: File, ifTrue: {
+      var mime is Shell call: 'file -b --mime-type \'%s\'' % [object realPath escapeAsciiControls escape: '\''], trim.
+      Pen writeln: mime.
+      ^ self getRendererForMime: mime.
+    }.
+    object isA: String, ifTrue: {
+      ^ self getRendererForMime: 'text/plain'.
+    }.
+    # ...
+
+    ^ self getRendererForMime: 'text/plain'.
+  }.
+  on: 'getRendererForMime:' do: {:mime
+    var renderer is my renderers @ mime.
+    renderer isNil ifTrue: {
+      Pen writeln: 'unknown mime $$mime'.
+      ^my renderers @ 'text/plain'.
+    }.
+    ^renderer.
+  }.
+  var renderers is my renderers.
+
+  var render-with is {:x:y
+    renderers put: y at: x.
+  }.
+
+  'text/plain' `render-with` {:&object:html_if_plain
+    object isA: File, ifTrue: {
+      ^const encode[object read, html_if_plain either: 'text/html' or: 'text/plain'].
+    } ifFalse: {
+      ^const encode[object toString, html_if_plain either: 'text/html' or: 'text/plain'].
+    }.
+  }.
+
+  'text/html' `render-with` {:&object:html_if_plain
+    object isA: File, ifTrue: {
+      ^const encode[object read, 'text/html'].
+    } ifFalse: {
+      ^const encode[object toString, 'text/html'].
+    }.
+  }.
+
+  'application/json' `render-with` {:&object:html_if_plain
+    object isA: File, ifTrue: {
+      ^const encode[object read, 'application/json'].
+    } ifFalse: {
+      ^const encode[object toString, 'application/json'].
+    }.
+  }.
+
+  'image/png' `render-with` {:&object:html_if_plain
+    object isA: File, ifTrue: {
+      var fv is Shell call: 'base64 \'%s\'' % [object realPath escapeAsciiControls escape: '\''], trim.
+      ^const encode[fv, 'image/png'].
+    } ifFalse: {
+      thisBlock error: 'can only render images as files'.
+    }.
+  }.
+  'image/svg' `render-with` {:&object:html_if_plain
+    object isA: File, ifTrue: {
+      ^const encode[object read, 'image/svg'].
+    } ifFalse: {
+      thisBlock error: 'can only render images as files'.
+    }.
+  }.
+}.
+var Display is Object cnew: {
+    # array of arrays -> table (no header?) # TODO: header
+    # array of non-array -> list
+    # object -> single cell
+    on: 'tabularize:' do: {:&object
+      log ['cast $$object to a table'].
+
+      object isA: Array, ifTrue: {
+        log 'it is an array'.
+        object count = 0 ifTrue: { ^[[]]. }.
+        object all: (\:x x isA: Array), ifTrue: {
+          log '...with array elements'.
+          # var max is object fmap: \:x x count, max.
+          ^ object.
+        } ifFalse: {
+          log '...with non-array elements'.
+          ^ object fmap: \:x [x].
+        }.
+      } ifFalse: {
+        log 'it is a simple object'.
+        ^[[object]].
+      }.
+    }.
+
+    on: 'tablegen:' do: {:tables
+      log ['Generating a table from $$tables'].
+
+      var tabs is tables fmap: {:&table
+        var str is '<b>${{table head htmlEscape}}$</b><table>'.
+        var tbl is table last.
+        tbl each_v: {:&row
+          str +=: '<tr>'.
+          row each_v: {:&cell
+            str +=: '<td> ${{cell toString htmlEscape}}$ </td>'.
+          }.
+          str +=: '</td>'.
+        }.
+        str +=: '</table>'.
+        ^str.
+      }.
+      ^tabs join: '\n'.
+    }.
+
+    on: 'list-parent-chain:' do: {:&object
+      ^Reflect generateLinkTree: object, fmap: \:x x type.
+    }.
+
+    on: 'list-properties:' do: {:&object
+      ^Reflect getPropertiesOf: object, fmap: {:&x ^[x, Reflect getProperty: x ofObject: object].}.
+    }.
+
+    on: 'list-methods:' do: {:&object
+      ^Reflect getMethodsOf: object, fmap: \:&x [x].
+    }.
+    on: 'init' do: {
+      registery => const Registery.
+    }.
+    on: 'applyAll:' do: {:self:objects
+      objects count < 1 ifTrue: {
+        thisBlock error: 'Display must be called with at least one item'.
+      }.
+      var inspect is False.
+      var table is False.
+      var force-text is False.
+      var html is False.
+
+      objects is objects from: 0 lengthMax: objects count.
+      var object is objects shift.
+
+      # Display::'something:' returns these
+      object isA: const EncodedDisplayObject, ifTrue: {
+        ^ object.
+      }.
+      objects each_v: {:opt
+        (frozen _ is Symbol
+        case: \inspect do: { inspect is True. },
+        case: \html
+        case: \HTML    do: { html is True. },
+        case: \text
+        case: \plain   do: { force-text is True. },
+        case: \table   do: { table is True. },
+        default:           {}
+        ) switch: opt.
+      }.
+
+      # toString
+      force-text ifTrue: {
+        ^const encode[object toString, 'text/plain'].
+      }.
+
+      # inspect -> display an object by its properties
+      # implies `table'
+      # implies `html'
+      inspect ifTrue: {
+        ^const encode[(self tablegen: [
+            ['link chain', [self list-parent-chain: object]],
+            ['properties', (self tabularize: (self list-properties: object))],
+            ['methods', (self tabularize: (self list-methods: object))]
+          ]), 'text/html'
+        ].
+      }.
+
+      # table -> display the given object as a table
+      # implies `html'
+      #
+      # array of arrays -> table (no header?) # TODO: header
+      # array of non-array -> list
+      # object -> single cell
+      table ifTrue: {
+          ^const encode[
+            (self tablegen: [['table', self tabularize: object]]),
+            'text/html'
+          ].
+      }.
+
+      # we got here, so no overrides
+      # let's guess the output type
+      var res is my registery findAppropriateRenderer: object, applyTo: object and: html.
+      log ['resolved to $$res'].
+      ^ res.
+    }.
+}.

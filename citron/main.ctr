@@ -16,9 +16,8 @@ import
 
 Json on: 'serialize!:' do: {:obj
   var res is serialize: obj, escape: '\n\a\b\f\r\t\v'.
-  {^res endsWith: '\x0'.} whileTrue: {
-    res is res from: 0 length: res length - 1.
-  }.
+  log ['serialized to $$res'].
+  res is res ~ 's/[\\0]+$//g'.
   ^res.
 }.
 
@@ -155,8 +154,6 @@ var general-handler is {:self:*sockets
 }.
 
 
-var text/plain is {:x ^Map new put: x toString at: 'text/plain'. }.
-
 var EvalContext is Map cnew: {
     JupyterPen => pPen for: JupyterIOPubStream.
 }.
@@ -229,7 +226,7 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
         put: counter at: 'execution_count',
         put: [] at: 'payload')].
       send-[socket-iopub, 'execute_result', (Map new
-        put: text/plain[res last] at: 'data',
+        put: Display[res last] at: 'data',
         put: counter at: 'execution_count',
         put: empty-object at: 'metadata')].
     }.
@@ -350,6 +347,8 @@ var startWorld is {:config-path
       log 'Heartbeat thread start'.
       zmq_proxy[socket-heartbeat, socket-heartbeat, c_null].
     }, run.
+
+    Display init.
     # Pen writeln: 'Starting general handler'.
     general-handler[socket-shell, socket-control].
 }.
@@ -368,6 +367,9 @@ args each: {:_:arg
         cfile is arg.
     }.
 }.
+
+import
+  ICitronModules/display: 'Display'.
 
 startWorld[cfile].
 
