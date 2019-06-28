@@ -11,7 +11,8 @@ var makeHeader is {\:user:session:version
       put: user at: 'username',
       put: session at: 'session',
       put: msg-type at: 'msg_type',
-      put: version at: 'version'
+      put: version at: 'version',
+      put: (Clock new format: '%Y-%m-%dT%H:%M:%S') at: 'date'
     ).
   }.
 }.
