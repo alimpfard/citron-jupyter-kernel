@@ -319,8 +319,8 @@ var startWorld is {:config-path
     # zmq context
     var zmq-context is zmq_ctx_new[].
 
-    var socket-shell     is const createZmq[zmq-context, ZMQ_ROUTER, addport[shell-port    ]].
-    var socket-control   is const createZmq[zmq-context, ZMQ_ROUTER, addport[control-port  ]].
+    var socket-shell     is const createZmq[zmq-context, ZMQ_DEALER, addport[shell-port    ]].
+    var socket-control   is const createZmq[zmq-context, ZMQ_DEALER, addport[control-port  ]].
     var socket-iopub     is const createZmq[zmq-context, ZMQ_PUB,    addport[iopub-port    ]].
     var socket-stdin     is const createZmq[zmq-context, ZMQ_ROUTER, addport[stdin-port    ]].
 
