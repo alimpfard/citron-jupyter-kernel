@@ -1,5 +1,7 @@
 #:language XFrozen
 
+File on: 'type' do: { ^'File'. }. # TODO: move this
+
 import Library/Data/SwitchCase.
 import Library/Graphics/Plot/GnuPlot: \*.
 
@@ -44,12 +46,13 @@ var Registery is Object cnew: {
   var render-type-with is {:x:y
     type-renderers put: y at: x type.
   }.
+
   File `render-type-with` {:&object:self
       var mime is Shell call: 'file -b --mime-type \'%s\'' % [object realPath escapeAsciiControls escape: '\''], trim.
       Pen writeln: mime.
       ^ self getRendererForMime: mime.
   }.
-  
+
   String `render-type-with` {:&object:self
       ^self getRendererForMime: 'text/plain'.
   }.
