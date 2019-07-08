@@ -1,6 +1,7 @@
 #:language XFrozen
 
 import Library/Data/SwitchCase.
+import Library/Graphics/Plot/GnuPlot: \*.
 
 var EncodedDisplayObject is Map new.
 EncodedDisplayObject on: 'type' do: {\ 'EncodedDisplayObject' }.
@@ -13,21 +14,18 @@ var encode is {:&object:mime
 
 var Registery is Object cnew: {
   renderers => Map new.
+  type-renderers => Map new.
+
   on: 'toString' do: {
     ^'MimeRegistery {%L}' % [my renderers keys].
   }.
   on: 'findAppropriateRenderer:' do: {:self:&object
-    object isA: File, ifTrue: {
-      var mime is Shell call: 'file -b --mime-type \'%s\'' % [object realPath escapeAsciiControls escape: '\''], trim.
-      Pen writeln: mime.
-      ^ self getRendererForMime: mime.
-    }.
-    object isA: String, ifTrue: {
+    var ff is my type-renderers at: object type.
+    ff isNil ifTrue: {
       ^ self getRendererForMime: 'text/plain'.
+    } ifFalse: {
+        ^ff[object, self].
     }.
-    # ...
-
-    ^ self getRendererForMime: 'text/plain'.
   }.
   on: 'getRendererForMime:' do: {:mime
     var renderer is my renderers @ mime.
@@ -38,9 +36,30 @@ var Registery is Object cnew: {
     ^renderer.
   }.
   var renderers is my renderers.
+  var type-renderers is my type-renderers.
 
   var render-with is {:x:y
     renderers put: y at: x.
+  }.
+  var render-type-with is {:x:y
+    type-renderers put: y at: x type.
+  }.
+  File `render-type-with` {:&object:self
+      var mime is Shell call: 'file -b --mime-type \'%s\'' % [object realPath escapeAsciiControls escape: '\''], trim.
+      Pen writeln: mime.
+      ^ self getRendererForMime: mime.
+  }.
+  
+  String `render-type-with` {:&object:self
+      ^self getRendererForMime: 'text/plain'.
+  }.
+
+  Plot `render-type-with` {:&object:self
+    object initialized ifTrue: {
+        ^self getRendererForMime: 'extra/svg+plot'.
+    } ifFalse: {
+        ^self getRendererForMime: 'text/plain'.
+    }.
   }.
 
   'text/plain' `render-with` {:&object:html_if_plain
@@ -80,6 +99,48 @@ var Registery is Object cnew: {
       ^const encode[object read, 'image/svg'].
     } ifFalse: {
       thisBlock error: 'can only render images as files'.
+    }.
+  }.
+
+  'extra/svg+plot' `render-with` {:&object:html_if_plain
+    object isA: Plot, ifTrue: {
+      var output-file is File new: '/tmp/icitron-gnuplot-%s.svg' % [Program pid].
+      object do: {
+        terminal: 'svg size 600,400 fname \'Verdana, Helvetica, Arial, sans-serif\''.
+        output: output-file path.
+      }.
+      GnuPlot open: {:&io
+        object toIO: io.
+      }.
+      var svg is ?>
+      <html>
+          <head>
+              <script src="http://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.16/require.js"></script>
+          </head>
+          <body>
+            %s
+          </body>
+          <script>
+              require.config({
+                  paths: {
+                      'svg-pan-zoom': '//cdn.rawgit.com/ariutta/svg-pan-zoom/master/dist/svg-pan-zoom'
+                  }
+              })
+
+              require(["svg-pan-zoom"], function(svgPanZoom) {
+                  let s = document.querySelector('svg');
+                  console.log(s);
+                  svgPanZoom(s, {
+                      zoomEnabled: true,
+                      controlIconsEnabled: true
+                  });
+              });
+          </script>
+      </html>
+<? % [output-file read].
+      ^const encode[svg, 'text/html'].
+    } ifFalse: {
+      thisBlock error: 'can only render Plot objects as svg+plot'.
     }.
   }.
 }.

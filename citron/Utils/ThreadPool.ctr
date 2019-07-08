@@ -1,0 +1,51 @@
+var ThreadPool is Object cnew: {
+  on: 'newWithSize:andInitializer:andFinalizer:' do: {:size:init:fin
+    ^ThreadPool cnew: {:self
+      var queues is Array new fill: size with: \:_ Array new: 16.
+      queues => queues.
+      running => True.
+      var &running is my running.
+      localBuffer => Array new: size.
+      threads => Array new fill: size with: {:i
+        ^Thread new: {:&m_queue:&m_running:&m_init:&m_fin:&m_id:&m_pool
+          Thread name: 'TPool%d' % [m_id].
+          # initialize
+          Reflect runHere: m_init forObject: me arguments: [].
+
+          {^m_running.} whileTrue: {
+            m_queue count = 0 ifFalse: {
+              var job is m_queue shift.
+              Reflect runHere: job forObject: me arguments: [m_pool].
+            }.
+          }.
+
+          Reflect runHere: m_fin forObject: me arguments: [].
+
+        } args: [queues @ i, running, init, fin, i, self], run.
+      }.
+    }.
+  }.
+  on: 'load' do: {
+    ^my queues foldl: {:&acc:&x ^acc push: (x count / 16).} accumulator: Array new.
+  }.
+  on: 'toString' do: {
+    ^'<ThreadPool {load: %L, unprocessed: %s}>' % [me load, my localBuffer count].
+  }.
+  on: 'stop' do: {
+    running => False.
+  }.
+  on: 'do:' do: {:job
+    var &queue is my queues sort: {:a:b ^a count < b count. }, head.
+    queue push: job.
+  }.
+  on: 'doOnAll:' do: {:job
+    my queues each_v: {:queue queue push: job. }.
+  }.
+  on: 'result:' do: {:&expr
+    my localBuffer push: expr.
+  }.
+  on: 'await' do: {
+    running => False.
+    my threads fmap!: \:x x join.
+  }.
+}.
