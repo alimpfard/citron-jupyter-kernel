@@ -8,8 +8,7 @@ The execution of code is done through a kernel that uses its messaging protocol.
 
 Things that don't work, period:
 + Code Completion is not implemented
-+ Syntax highlighting is nonexistent
-+ The kernel will sit and look at you for a few restarts (:shrug:)
++ Syntax highlighting is ruby's, so expect lots of wrong highlights
 
 
 Things that sometimes break:
@@ -19,9 +18,7 @@ Things that sometimes break:
 
 
 Things that work:
-+ Once the kernel is up and connected, expressions can be executed.
-+ Unary/Binary messages don't require an ending dot
-+ Keyword messages _must_ end in a dot.
++ the `Display` object can control the cell output format~
 
 ## Installation
 You're nuts.
@@ -32,12 +29,9 @@ Requires:
 + `Openssl` (if you're using windows, go away)
 
 How-to:
-
-write a kernel.json file according to [this](https://jupyter-client.readthedocs.io/en/stable/kernels.html#kernel-specs), or copy the ready one (hopefully once I add it)
-to `~/.local/share/jupyter/kernels/citron`
-
-
-**This also works with Jupyter Lab** (Why would it not?)
++ run `install_script.sh`
++ `jupyter notebook` 
++ select "Citron Kernel"
 
 Here's a screenshot
 ![Screenshot: Hello](images/screenshot-hello.png)
