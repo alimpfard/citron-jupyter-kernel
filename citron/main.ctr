@@ -14,6 +14,8 @@ import Library/Data/Json.
 import
     Library/Foreign/C/C_Types: { c_null => 'c_ptr_null'. }.
 
+import Library/Data/String.
+
 Json on: 'serialize!:' do: {:obj
   var res is serialize: obj, escape: '\n\a\b\f\r\t\v'.
   log ['serialized to $$res'].
@@ -159,10 +161,25 @@ var EvalContext is Map cnew: {
 }.
 
 var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:content
-  var code is
-  '{\n' +
-    (content @ 'code') +
-  '\n}.'.
+  var code is content @ 'code'.
+  code is code trim.
+  code startsWith: ':', ifTrue: {
+    # some meta stuff
+    var timeit is False.
+    var fargs is code skip: 1, break: \:x x trim = ''.
+    (frozen _ is Object
+      case: 'time' do: {
+        code is '{\n' + fargs last + '\n}'.
+        timeit is True.
+      },
+      case: '' do: {
+        code is '{\n Shell sh: \'-c "${{fargs last escapeAsciiControls escape: '\'"', trim}}$"\'. \n}'.
+      }) switch: fargs head.
+    log ['code is $$fargs'].
+  } ifFalse: {
+    code is
+    '{\n' + code + '\n}.'.
+  }.
   log 'Generated code'.
 
   var silent            is content @ 'silent'.
@@ -186,21 +203,23 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
   log ['Set IOPubStream $$JupyterIOPubStream headers to $$header- and $$parent-header'].
   # Thread new: {
     log ['Started execution thread for expr $$counter'].
-    var res is {
-      var cobjs is AST parse: code.
-      var res is Reflect run: {:cobjs:EvalContext
-        var res is Nil.
-        cobjs each: {:_:cobj
-          res is cobj evaluateInContext: EvalContext.
-        }.
-        ^res.
-      } inContextAsMain: const EvalContext arguments: [cobjs @ 0 @ 1, const EvalContext].
-      ^[\Ok, res].
-    } catch: {:e
-      # Pen red writeln: [e, e exceptionInfo], resetColor.
-      ^[\Error, e].
-    }, run.
-
+    var res is Nil.
+    var time is Clock timeExecutionOf: {
+      res is {
+        var cobjs is AST parse: code.
+        var res is Reflect run: {:cobjs:EvalContext
+          var res is Nil.
+          cobjs each: {:_:cobj
+            res is cobj evaluateInContext: EvalContext.
+          }.
+          ^res.
+        } inContextAsMain: const EvalContext arguments: [cobjs @ 0 @ 1, const EvalContext].
+        ^[\Ok, res].
+      } catch: {:e
+        # Pen red writeln: [e, e exceptionInfo], resetColor.
+        ^[\Error, e].
+      }, run.
+    }.
     log ['Executed code $$code'].
 
     log ['Sending info back for context $$counter'].
@@ -229,6 +248,9 @@ var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:conten
         put: Display[res last] at: 'data',
         put: counter at: 'execution_count',
         put: empty-object at: 'metadata')].
+    }.
+    timeit ifTrue: {
+      JupyterIOPubStream write: 'Execution took $$time cycles'.
     }.
 
     log ['Responded to the execute request $$res'].
