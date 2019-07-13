@@ -148,10 +148,12 @@ var Registery is Object cnew: {
   }.
 }.
 var Display is Object cnew: {
+    genAccessors: ['limit', 'offset'].
+
     # array of arrays -> table (no header?) # TODO: header
     # array of non-array -> list
     # object -> single cell
-    on: 'tabularize:' do: {:&object
+    on: 'tabularize:' do: {:self:&object
       log ['cast $$object to a table'].
 
       object isA: Array, ifTrue: {
@@ -160,14 +162,28 @@ var Display is Object cnew: {
         object all: (\:x x isA: Array), ifTrue: {
           log '...with array elements'.
           # var max is object fmap: \:x x count, max.
-          ^ object.
+          log ['object has ${{object count}}$ entries'].
+
+          ^ object from: self offset lengthMax: self limit.
         } ifFalse: {
+
+          log ['limit to ${{self limit}}$ entries starting at ${{self offset}}$'].
           log '...with non-array elements'.
-          ^ object fmap: \:x [x].
+          ^ object from: self offset lengthMax: self limit, fmap: \:x [x].
         }.
       } ifFalse: {
-        log 'it is a simple object'.
-        ^[[object]].
+        object isA: Plot, ifTrue: {
+          object initialized? ifFalse: {
+            ^[[object]].
+          }.
+          log 'it is a plot'.
+          var datasets is object data.
+          var zip-if-array is \:x x isA: Array, either: { ^x zip. } or: { ^x. }.
+          ^[(self tabularize: zip-if-array[dataset data]),, (dataset: datasets)] sum.
+        } ifFalse: {
+          log 'it is a simple object'.
+          ^[[object]].
+        }.
       }.
     }.
 
@@ -212,30 +228,47 @@ var Display is Object cnew: {
       var table is False.
       var force-text is False.
       var html is False.
+      var limit is 100.
+      var offset is 0.
 
       objects is objects from: 0 lengthMax: objects count.
       var object is objects shift.
+
+      var next is Nil.
 
       # Display::'something:' returns these
       object isA: const EncodedDisplayObject, ifTrue: {
         ^ object.
       }.
       objects each_v: {:opt
-        (frozen _ is Symbol
-        case: \inspect do: { inspect is True. },
-        case: \html
-        case: \HTML    do: { html is True. },
-        case: \text
-        case: \plain   do: { force-text is True. },
-        case: \table   do: { table is True. },
-        default:           {}
-        ) switch: opt.
+        next isNil either: {(frozen _ is Symbol
+          case: \inspect do: { inspect is True. },
+          case: \html
+          case: \HTML    do: { html is True. },
+          case: \text
+          case: \plain   do: { force-text is True. },
+          case: \table   do: { table is True. },
+          case: \limit   do: { next is \limit. },
+          case: \offset  do: { next is \offset. },
+          default:           {}
+        ) switch: opt. }
+        or: {(frozen _ is Symbol
+          case: \limit   do: { next is Nil. limit is opt toNumber. },
+          case: \offset  do: { next is Nil. offset is opt toNumber. },
+          default:           { next is Nil. }
+        ) switch: next.}.
       }.
 
       # toString
       force-text ifTrue: {
         ^const encode[object toString, 'text/plain'].
       }.
+
+      # limit the output cells in a table
+      self limit: limit.
+      self offset: offset.
+
+      log ['limit to ${{self limit}}$ entries starting at ${{self offset}}$'].
 
       # inspect -> display an object by its properties
       # implies `table'

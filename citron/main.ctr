@@ -163,9 +163,9 @@ var EvalContext is Map cnew: {
 var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:content
   var code is content @ 'code'.
   code is code trim.
+  var timeit is False.
   code startsWith: ':', ifTrue: {
     # some meta stuff
-    var timeit is False.
     var fargs is code skip: 1, break: \:x x trim = ''.
     (frozen _ is Object
       case: 'time' do: {
