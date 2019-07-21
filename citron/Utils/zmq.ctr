@@ -155,8 +155,8 @@ var zmq_send_all is {:self:socket:data:flags
   # Pen writeln: 'sending parts: ${{data head toByteArray}}$, ${{data tail join: ', '}}$'.
   data each: {:idx:data
     var nflags is (datalength - 1 = idx either: flags or: (flags bitOr: ZMQ_SNDMORE)).
-    Pen cyan write: '[CitronZMQ] ', resetColor writeln: 'sending %d bytes' % [data bytes].
+    # Pen cyan write: '[CitronZMQ] ', resetColor writeln: 'sending %d bytes' % [data bytes].
     var res is zmq_send[socket, data, data bytes, nflags].
-    Pen cyan write: '[CitronZMQ] ', resetColor writeln: 'sent %d bytes (%d bytes expected)' % [res, data bytes].
+    # Pen cyan write: '[CitronZMQ] ', resetColor writeln: 'sent %d bytes (%d bytes expected)' % [res, data bytes].
   }.
 }.

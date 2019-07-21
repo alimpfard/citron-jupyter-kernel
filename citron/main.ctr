@@ -380,13 +380,18 @@ var args is Generator from: 0 to: Program argCount - 1, fmap: \:x Program argume
 args next.
 args next.
 var cfile is Nil.
-
+var pathd is False.
 args each: {:_:arg
     Pen writeln: arg.
     arg = '-quiet' ifTrue: {
         DEBUG is False.
     } ifFalse: {
-        cfile is arg.
+        pathd ifTrue: {
+            cfile is arg.
+        } ifFalse: {
+            pathd is True.
+            Program changeDirectory: arg.
+        }.
     }.
 }.
 
