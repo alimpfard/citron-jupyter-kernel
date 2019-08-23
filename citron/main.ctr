@@ -5,7 +5,8 @@ Broom memoryLimit: 1024 * 1024 * 1024 * 8.
 import
   Utils/zmq: \*
   Utils/tools: \*
-  Utils/hmac: \*.
+  Utils/hmac: \*
+  Utils/string-utils: \*.
 
 import Utils/JupyterIOPubStream: \*.
 import Library/Data/IO/Pen: 'pPen'.
@@ -54,7 +55,7 @@ var createZmq is {\:qq:type:scm :rp:rv:rv2
 var DELIM is '<IDS|MSG>'.
 
 var KERNEL-INFO is Map new
-  put: '5.3.0' at: 'protocol_version',
+  put: '5.3' at: 'protocol_version',
   put: 'Citron Jupyter Kernel' at: 'implementation',
   put: '0.0.1' at: 'implementation_version',
   put: (
@@ -158,6 +159,7 @@ var general-handler is {:self:*sockets
 
 var EvalContext is Map cnew: {
     JupyterPen => pPen for: JupyterIOPubStream.
+    put: my JupyterPen at: 'JupyterPen'.
 }.
 
 var reply-execute-request is {:socket:uuid:header-:parent-header:metadata:content
@@ -299,12 +301,98 @@ var handle-iscomplete is {:socket:uuid:header-:parent-header:metadata:content
   }, run.
 }.
 
+var handle-complete is {:socket:uuid:header-:parent-header:metadata:content
+  log 'Completion request initiated'.
+  {
+    var cpos is content @ 'cursor_pos'.
+    var code is content at: 'code', from: 0 length: cpos.
+    var spaced is False.
+    var parens is 0.
+    var last-stmt is str-scanr[code, {:&char
+      char = '(' ifTrue: {
+        ^(parens -=: 1, < 1) not.
+      }. # (...
+      char = ')' ifTrue: {
+        parens +=: 1.
+        ^True.
+      }. # ...)
+      char = ':' ifTrue: {
+        ^False. # break on these
+      }.
+      var res is char ~ 's/\\s//g' !=: ''.
+      res | spaced ifFalse: {
+        spaced is True.
+        ^True.
+      }.
+      (res not) & spaced ifTrue: {
+        ^False.
+      }.
+      ^True.
+    }] reverse.
+    var matches is Nil.
+    var replen is last-stmt length.
+    spaced ifTrue: {
+      var parts is last-stmt split: ' '.
+      var msg is (parts @ 1) lower.
+      replen is msg length.
+      var objname is parts @ 0.
+      log ['found object name: $$objname'].
+      var ast is AST parse: '${{objname}}$.', at: 0.
+      log ['parsed: $$ast - ${{ast type}}$ - ${{ast value}}$'].
+      var obj is Object.
+      ast type = 'REFERENCE' ifTrue: {
+        ast value = '?' ifTrue: {
+          obj is Nil.
+        } ifFalse: {
+          obj is EvalContext at: objname.
+        }.
+      } ifFalse: {
+        ast type = 'LTRNUM' ifTrue: {
+          obj is Number.
+        }.
+      }.
+      matches is Reflect getMethodsOf: obj, filter_v: {:meth ^meth lower contains: msg.}.
+      matches is matches sort: {:a:b
+        ^str-span[a, msg] < str-span[b, msg].
+      }.
+    } ifFalse: {
+      var fragment is last-stmt lower.
+      matches is flatten[EvalContext keys] filter_v: {:obj ^obj lower contains: fragment.}.
+      matches is matches sort: {:a:b
+        ^str-span[a, fragment] < str-span[b, fragment].
+      }.
+    }.
+    log ['resolved a bit: ${{last-stmt}}$: $$matches'].
+        send [
+     key, socket, uuid,
+     header- ['complete_reply'],
+     parent-header, metadata, (
+     Json serialize!: (
+       Map new put: matches at: 'matches', put: cpos at: 'cursor_end',
+        put: cpos - replen at: 'cursor_start',
+        put: Map new at: 'metadata',
+        put: 'ok' at: 'status'))
+    ].
+
+  } catch: {:e
+    log ['completion process failed with exception $$e'].
+    send [
+     key, socket, uuid,
+     header- ['complete_reply'],
+     parent-header, metadata,
+     (Json serialize!: (
+       Map new put: e toString at: 'error', put: 'error' at: 'status'))
+    ].
+  }, run.
+}.
+
 var dispatch-route is Map new
   put: reply-kernel-info-request at: 'kernel_info_request',
   put: reply-execute-request     at: 'execute_request',
   put: shutdown                  at: 'shutdown_request',
   put: ignore-request            at: 'comm_info_request',
-  put: handle-iscomplete         at: 'is_complete_request'.
+  put: handle-iscomplete         at: 'is_complete_request',
+  put: handle-complete           at: 'complete_request'.
 
 var dispatch is {:msg-type
   # Pen green write: '[CitronKernel] ', resetColor writeln: 'dispatch $$msg-type'.

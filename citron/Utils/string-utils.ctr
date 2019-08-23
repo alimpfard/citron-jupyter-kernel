@@ -1,0 +1,34 @@
+var str-scanr is {:&str:blk
+  var s is ''.
+  var len is str length.
+  len - 1 to: -1 step: -1 do: {:&pos
+    var c is str @ pos.
+    blk applyTo: c and: pos, not break.
+    s +=: c.
+  }.
+  ^s.
+}.
+
+var str-span is {:&a:&b
+  var sp is 0.
+  var blen is b length.
+  var alen is a length.
+  (blen = 0) | (alen = 0) ifTrue: { ^0. }.
+  (blen min: alen) times: {:idx
+    ((a @ idx) = (b @ idx)) not break.
+    sp +=: 1.
+  }.
+  ^sp.
+}.
+
+var flatten is {:self:arr
+  var arrv is Array new.
+  arr each_v: {:obj
+    obj isA: Array, ifTrue: {
+      arrv is arrv + self[obj].
+    } ifFalse: {
+      arrv push: obj.
+    }.
+  }.
+  ^arrv.
+}.
