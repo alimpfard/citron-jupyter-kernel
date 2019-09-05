@@ -7,14 +7,14 @@ The execution of code is done through a kernel that uses its messaging protocol.
 ## The current state of this thing
 
 Things that don't work, period:
-+ Code Completion is not implemented
 + Syntax highlighting is ruby's, so expect lots of wrong highlights
 
 
 Things that sometimes break:
-+ IO stream redirects are not redirected, but `JupyterPen` can write to the stdout of the cell
++ IO streams are not redirected, but `JupyterPen` can write to the stdout of the cell
 + Execution of too many code blocks at once prompts Jupyter to restart the kernel (for no apparent reason?)
 + no Heartbeat messages are sent, so none are handled
++ Code completion is available...sometimes
 
 
 Things that work:
